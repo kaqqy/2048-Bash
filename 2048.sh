@@ -30,36 +30,39 @@ repeat ()
     done
 }
 
+escape ()
+{
+    if [[ $# -ne 1 ]]
+    then
+        echo "Error: Need exactly one argument for escape()"
+        exit
+    fi
+    echo $1 | sed 's/\(["\]\)/\\\1/g'
+}
+
 tput smcup # show alternate screen
-#printf "\e[8;${SH};${SW}t" # resize window
+printf "\e[8;${SH};${SW}t" # resize window
 tput clear
 
 # drawing the grid
 boxline="repeat $BW 'printf q'"
-boxspace="repeat $BW 'printf \\\\\\\" \\\\\\\"'"
+boxspace="repeat $BW 'printf \" \"'"
 gridline="printf t; repeat $(($GW - 1)) \"$boxline\" 'printf n'; $boxline; printf 'u\n'"
-gridspace="repeat $GW 'printf x' \\\"$boxspace\\\"; printf 'x\n'"
-gridspaces="repeat $GH \"$gridspace\""
-#tput smacs
-#printf 'l'
-#repeat $(($GW - 1)) "$boxline" "printf w"
-#eval "$boxline"
-#printf 'k\n'
-eval "$boxspace"
-echo
-echo $boxspace
-echo $gridspace
-echo $gridspaces
-#eval "$gridline"
-#tput rmacs
+gridspace="repeat $GW 'printf x' \"$(escape "$boxspace")\"; printf 'x\n'"
+gridrow="repeat $BH \"$(escape "$gridspace")\""
+tput smacs
+printf 'l'
+repeat $(($GW - 1)) "$boxline" "printf w"
+eval "$boxline"
+printf 'k\n'
+repeat $(($GH - 1)) "$gridrow" "$gridline"
+eval "$gridrow"
+printf 'm'
+repeat $(($GW - 1)) "$boxline" "printf v"
+eval "$boxline"
+printf 'j'
+tput rmacs
 
-#printf 'l'
-#repeat $BW "printf q"
-#printf 'k\n'
-#repeat $BH "printf x" "repeat $BW 'printf \" \"'" "printf 'x\n'"
-#printf 'm'
-#repeat $BW "printf q"
-#printf 'j\n'
 sleep 5
 tput rmcup # hide alternate screen
 printf "\e[8;${OSH};${OSW}t" # resize window
