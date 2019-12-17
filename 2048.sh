@@ -266,5 +266,3 @@ do
 done
 
 clean_exit
-
-printf '\a'
