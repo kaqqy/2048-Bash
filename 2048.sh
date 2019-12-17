@@ -17,6 +17,7 @@ do
         board[$(($GW * $i + $j))]=""
     done
 done
+num_filled=0 # spaces on the board that are filled
 
 # Writes an status log message to the screen ()
 status_log ()
@@ -34,7 +35,7 @@ repeat ()
     if [[ $# -lt 1 ]]
     then
         status_log "Error: Not enough arguments for repeat()"
-        exit
+        clean_exit
     fi
     count=$1
     shift
@@ -53,7 +54,7 @@ escape ()
     if [[ $# -ne 1 ]]
     then
         status_log "Error: Need exactly one argument for escape()"
-        exit
+        clean_exit
     fi
     echo $1 | sed 's/\(["\]\)/\\\1/g'
 }
@@ -64,7 +65,7 @@ shift_board ()
     if [[ $# -ne 1 ]]
     then
         status_log "Error: Wrong number of arguments for shift_board()"
-        exit
+        clean_exit
     fi
     # setup variables for handling all 4 directions at once
     # up = 0, down = 1, left = 2, right = 3
@@ -95,17 +96,50 @@ shift_board ()
     done
 }
 
+# Merges blocks on the board
+merge_blocks ()
+{
+    if [[ $# -ne 1 ]]
+    then
+        status_log "Error: Wrong number of arguments for merge_blocks()"
+        clean_exit
+    fi
+    # setup variables for handling all 4 directions at once
+    # up = 0, down = 1, left = 2, right = 3
+    local row_shift=$(((1 - $1 / 2) * (2 * $1 - 1)))
+    local col_shift=$((($1 / 2) * (2 * $1 - 5)))
+    # local ind_shift=$(((2 * ($1 % 2) - 1) * (1 + ($GW - 1) * (1 - $1 / 2))))
+    local range_start=$((($1 % 2) * ($GW * $GH - 1)))
+    local range_end=$(((1 - ($1 % 2)) * ($GW * $GH - 1)))
+    for i in $(seq $range_start $range_end)
+    do
+        local prev_row=$(($i / $GW))
+        local prev_col=$(($i % $GW))
+        local row=$(($prev_row + $row_shift))
+        local col=$(($prev_col + $col_shift))
+        if [[ $row -ge 0 ]] && [[ $row -lt $GH ]] && [[ $col -ge 0 ]] && [[ $col -lt $GW ]]
+        then
+            if [[ "${board[$(($GW * $row + $col))]}" != "" ]] && [[ "${board[$(($GW * $row + $col))]}" -eq "${board[$(($GW * $prev_row + $prev_col))]}" ]]
+            then
+                board[$(($GW * $row + $col))]="$((2 * ${board[$(($GW * $row + $col))]}))"
+                board[$(($GW * $prev_row + $prev_col))]=""
+                num_filled=$((num_filled - 1))
+            fi
+        fi
+    done
+}
+
 # Writes the number $3 to the box at row $1 and col $2
 write_to_box ()
 {
     if [[ $# -ne 3 ]]
     then
         status_log "Error: Wrong number of arguments for write_to_box()"
-        exit
+        clean_exit
     elif [[ $1 -ge $GH ]] || [[ $1 -lt 0 ]] || [[ $2 -ge $GW ]] || [[ $2 -lt 0 ]]
     then
         status_log "Error: Out of bounds coordinates for write_to_box()"
-        exit
+        clean_exit
     fi
     local row=$(($1 * (1 + $BH) + 1 + $BH / 2))
     local col=$(($2 * (1 + $BW) + 1))
@@ -116,8 +150,11 @@ write_to_box ()
 }
 
 # Updates all numbers on the board
-update_board()
+counter=0
+update_board ()
 {
+    counter=$((counter+1))
+    status_log $counter
     for i in $(seq 0 $(($GH - 1)))
     do
         for j in $(seq 0 $(($GW - 1)))
@@ -125,6 +162,38 @@ update_board()
             write_to_box $i $j "${board[$(($GW * $i + $j))]}"
         done
     done
+}
+
+# Adds 2 or 4 randomly to the board
+add_num_to_board ()
+{
+    if [[ $num_filled -ge $(($GW * $GH)) ]]
+    then
+        status_log "Error: Cannot add another number to the board since it's full"
+        clean_exit
+    fi
+    local pos=$(($RANDOM % ($GW * GH - $num_filled) + 1))
+    local ind=-1
+    while [[ $pos -gt 0 ]]
+    do
+        ind=$(($ind + 1))
+        if [[ ${board[$ind]} == "" ]]
+        then
+            pos=$(($pos - 1))
+        fi
+    done
+    board[$ind]=$((2 + 2 * ($RANDOM % 2)))
+    num_filled=$((num_filled + 1))
+}
+
+clean_exit ()
+{
+    stty echo # shows keyboard input
+    tput op # reset any color/style changes
+    tput cnorm # unhides cursor
+    tput rmcup # hide alternate screen
+    printf "\e[8;${OSH};${OSW}t" # resize window
+    exit
 }
 
 tput smcup # show alternate screen
@@ -153,10 +222,7 @@ eval "$boxline"
 printf 'j'
 tput rmacs
 
-for i in {1..19}
-do
-    board[$(($RANDOM % ($GW * $GH)))]=$RANDOM
-done
+add_num_to_board
 update_board
 
 str="   "
@@ -167,23 +233,23 @@ do
     update=1
     case $str in
         *w | $'\e[A')
-            status_log up
             shift_board 0
+            merge_blocks 0
             shift_board 0
             ;;
         *s | $'\e[B')
-            status_log down
             shift_board 1
+            merge_blocks 1
             shift_board 1
             ;;
         *d | $'\e[C')
-            status_log right
             shift_board 3
+            merge_blocks 3
             shift_board 3
             ;;
         *a | $'\e[D')
-            status_log left
             shift_board 2
+            merge_blocks 2
             shift_board 2
             ;;
         *)
@@ -192,18 +258,13 @@ do
     esac
     if [[ $update -eq 1 ]]
     then
+        add_num_to_board
         update_board
-        # add new random block (2 or 4)
         # check if game is over (all filled)
     fi
     read -n 1 -s char
 done
 
-stty echo # shows keyboard input
-tput op # reset any color/style changes
-tput cnorm # unhides cursor
-tput rmcup # hide alternate screen
-printf "\e[8;${OSH};${OSW}t" # resize window
-exit
+clean_exit
 
 printf '\a'
